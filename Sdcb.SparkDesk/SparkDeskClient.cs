@@ -49,7 +49,7 @@ public class SparkDeskClient
     /// Sends messages to the backend and returns the response via callback. 
     /// Concatenate the string in the <paramref name="chatCallback"/> to get the whole response message.
     /// </summary>
-    /// <param name="modelVersion">The version of SparkDesk model.</param>
+    /// <param name="modelId">The version of SparkDesk model.</param>
     /// <param name="messages">The messages to send.</param>
     /// <param name="functions">The supported function calls to send.</param>
     /// <param name="chatCallback">The callback to receive the response.</param>
@@ -58,7 +58,7 @@ public class SparkDeskClient
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The usage of the tokens.</returns>
     public async Task<TokensUsage> ChatAsStreamAsync(
-        ModelVersion modelVersion,
+        string modelId,
         ChatMessage[] messages,
         Action<string> chatCallback,
         ChatRequestParameters? parameters = null,
@@ -67,7 +67,7 @@ public class SparkDeskClient
         CancellationToken cancellationToken = default)
     {
         TokensUsage? usage = null;
-        await foreach (StreamedChatResponse msg in ChatAsStreamAsync(modelVersion, messages, parameters, functions, uid, cancellationToken))
+        await foreach (StreamedChatResponse msg in ChatAsStreamAsync(modelId, messages, parameters, functions, uid, cancellationToken))
         {
             chatCallback(msg.Text);
             usage ??= msg.Usage;
@@ -79,7 +79,7 @@ public class SparkDeskClient
     /// <summary>
     /// Sends chat messages to SparkDesk API through websockets and receives response streams asynchronously.
     /// </summary>
-    /// <param name="modelVersion">The version of SparkDesk model.</param>
+    /// <param name="modelId">The version of SparkDesk model.</param>
     /// <param name="messages">Array of chat messages to send to SparkDesk API.</param>
     /// <param name="functions">Array of supported function calls to sent to SparkDesk API.</param>
     /// <param name="parameters">Optional parameters to modify chat request.</param>
@@ -87,7 +87,7 @@ public class SparkDeskClient
     /// <param name="cancellationToken">Optional cancellation token to stop the operation.</param>
     /// <returns>Asynchronous task that returns a <see cref="ChatResponse"/> object containing the streamed chat response.</returns>
     public async Task<ChatResponse> ChatAsync(
-        ModelVersion modelVersion,
+        string modelId,
         ChatMessage[] messages,
         ChatRequestParameters? parameters = null,
         FunctionDef[]? functions = null,
@@ -95,7 +95,7 @@ public class SparkDeskClient
         CancellationToken cancellationToken = default)
     {
         List<StreamedChatResponse> resps = new();
-        await foreach (StreamedChatResponse msg in ChatAsStreamAsync(modelVersion, messages, parameters, functions, uid, cancellationToken))
+        await foreach (StreamedChatResponse msg in ChatAsStreamAsync(modelId, messages, parameters, functions, uid, cancellationToken))
         {
             resps.Add(msg);
         }
@@ -103,22 +103,15 @@ public class SparkDeskClient
         return new ChatResponse(resps);
     }
 
-    internal static string GetHostUrlByModelVersion(ModelVersion modelVersion)
+    internal static string GetHostUrlByModelVersion(string modelId)
     {
-        return modelVersion switch
-        {
-            ModelVersion.V1_5 => "wss://spark-api.xf-yun.com/v1.1/chat", 
-            ModelVersion.V2 => "wss://spark-api.xf-yun.com/v2.1/chat",
-            ModelVersion.V3 => "wss://spark-api.xf-yun.com/v3.1/chat",
-            ModelVersion.V3_5 => "wss://spark-api.xf-yun.com/v3.5/chat",
-            _ => throw new ArgumentException($"Unsupported model version: {modelVersion}", nameof(modelVersion))
-        };
+        return $"wss://spark-api.xf-yun.com/{modelId}/chat";
     }
 
     /// <summary>
     /// Sends chat messages to SparkDesk API through websockets and receives response streams asynchronously.
     /// </summary>
-    /// <param name="modelVersion">The version of SparkDesk model.</param>
+    /// <param name="modelId">The version of SparkDesk model.</param>
     /// <param name="messages">Array of chat messages to send to SparkDesk API.</param>
     /// <param name="functions">Array of supported function calls to send to SparkDesk API.</param>
     /// <param name="parameters">Optional parameters to modify chat request.</param>
@@ -126,7 +119,7 @@ public class SparkDeskClient
     /// <param name="cancellationToken">Optional cancellation token to stop the operation.</param>
     /// <returns>Asynchronous stream of responses from SparkDesk API.</returns>
     public async IAsyncEnumerable<StreamedChatResponse> ChatAsStreamAsync(
-        ModelVersion modelVersion,
+        string modelId,
         ChatMessage[] messages,
         ChatRequestParameters? parameters = null,
         FunctionDef[]? functions = null,
@@ -135,12 +128,12 @@ public class SparkDeskClient
     {
         using ClientWebSocket webSocket = new();
 
-        await webSocket.ConnectAsync(new Uri(GetAuthorizationUrl(_apiKey, _apiSecret, GetHostUrlByModelVersion(modelVersion))), cancellationToken);
+        await webSocket.ConnectAsync(new Uri(GetAuthorizationUrl(_apiKey, _apiSecret, GetHostUrlByModelVersion(modelId))), cancellationToken);
 
         ArraySegment<byte> messageBuffer = new(JsonSerializer.SerializeToUtf8Bytes(new ChatApiRequest
         {
             Header = new ChatRequestHeader { AppId = _appId, Uid = uid },
-            Parameter = new RequestInternals.ChatRequestParameters { Chat = new ChatRequestParametersInternal(modelVersion, parameters) },
+            Parameter = new RequestInternals.ChatRequestParameters { Chat = new ChatRequestParametersInternal(modelId, parameters) },
             Payload = new Payload
             {
                 Message = new Message { Text = messages },
